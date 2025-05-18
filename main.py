@@ -12,6 +12,20 @@ from downloader import MinecraftDownloader
 from auth import MinecraftAuth
 import subprocess
 
+# 添加PMCL目录到Python路径
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# 动态获取所有Minecraft版本
+def get_all_minecraft_versions():
+    url = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
+    try:
+        resp = requests.get(url, timeout=10)
+        data = resp.json()
+        return [v["id"] for v in data["versions"]]
+    except Exception as e:
+        print("获取版本列表失败：", e)
+        return ["1.20.1", "1.19.4", "1.18.2", "1.17.1"]
+
 class LoginDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -214,19 +228,27 @@ class PMCL(QMainWindow):
         self.setCentralWidget(self.central_widget)
         self.layout = QVBoxLayout(self.central_widget)
         
+        # 查找或创建.minecraft目录
+        self.find_or_create_minecraft_dir()
+        
         # 创建界面元素
         self.create_ui()
         
         # 尝试自动登录
         self.try_auto_login()
     
-    def try_auto_login(self):
-        """尝试自动登录"""
-        dialog = LoginDialog(self)
-        if dialog.exec_() == QDialog.Accepted:
-            self.current_profile = dialog.current_profile
-            self.login_label.setText(f"已登录: {self.current_profile['name']} ({self.current_profile['type']})")
-            self.login_button.setText("切换账号")
+    def find_or_create_minecraft_dir(self):
+        """在项目主目录下查找或创建.minecraft目录"""
+        project_root = os.path.abspath(os.path.dirname(__file__))
+        minecraft_dir = os.path.join(project_root, '.minecraft')
+        if not os.path.exists(minecraft_dir):
+            try:
+                os.makedirs(minecraft_dir, exist_ok=True)
+                QMessageBox.information(self, "提示", f"已在 {minecraft_dir} 创建新的.minecraft目录")
+            except Exception as e:
+                QMessageBox.warning(self, "错误", f"无法创建.minecraft目录: {str(e)}")
+        self.config['game_dir'] = minecraft_dir
+        self.save_config()
     
     def create_ui(self):
         # 登录信息
@@ -253,10 +275,25 @@ class PMCL(QMainWindow):
         version_layout = QHBoxLayout()
         self.version_label = QLabel("游戏版本:")
         self.version_combo = QComboBox()
-        self.version_combo.addItems(["1.20.1", "1.19.4", "1.18.2", "1.17.1"])
+        all_versions = get_all_minecraft_versions()
+        self.version_combo.addItems(all_versions)
         
         version_layout.addWidget(self.version_label)
         version_layout.addWidget(self.version_combo)
+        
+        # 内存管理
+        memory_layout = QHBoxLayout()
+        self.memory_label = QLabel("最大内存:")
+        self.memory_combo = QComboBox()
+        self.memory_combo.addItems(["2G", "4G", "8G", "16G", "自定义"])
+        self.memory_combo.setCurrentIndex(0)
+        self.memory_input = QLineEdit()
+        self.memory_input.setPlaceholderText("如 6G 或 4096M")
+        self.memory_input.setVisible(False)
+        memory_layout.addWidget(self.memory_label)
+        memory_layout.addWidget(self.memory_combo)
+        memory_layout.addWidget(self.memory_input)
+        self.memory_combo.currentTextChanged.connect(self.on_memory_combo_changed)
         
         # 下载队列管理
         queue_layout = QHBoxLayout()
@@ -291,6 +328,7 @@ class PMCL(QMainWindow):
         self.layout.addLayout(login_layout)
         self.layout.addLayout(dir_layout)
         self.layout.addLayout(version_layout)
+        self.layout.addLayout(memory_layout)
         self.layout.addLayout(queue_layout)
         self.layout.addWidget(self.download_button)
         self.layout.addWidget(self.pause_button)
@@ -314,8 +352,14 @@ class PMCL(QMainWindow):
             self.status_label.setText(f"任务已在队列: {self.download_queue}")
     
     def select_game_dir(self):
-        dir_path = QFileDialog.getExistingDirectory(self, "选择Minecraft游戏目录")
+        project_root = os.path.abspath(os.path.dirname(__file__))
+        default_minecraft_dir = os.path.join(project_root, '.minecraft')
+        dir_path = QFileDialog.getExistingDirectory(self, "选择Minecraft游戏目录", default_minecraft_dir)
         if dir_path:
+            # 只允许选择主目录下的.minecraft
+            if os.path.abspath(dir_path) != os.path.abspath(default_minecraft_dir):
+                QMessageBox.warning(self, "错误", f"请选择本项目主目录下的 .minecraft 文件夹！\n当前选择: {dir_path}")
+                return
             self.dir_input.setText(dir_path)
             self.config['game_dir'] = dir_path
             self.save_config()
@@ -385,6 +429,12 @@ class PMCL(QMainWindow):
             self.pause_button.setText("继续下载")
             self.is_paused = True
     
+    def on_memory_combo_changed(self, text):
+        if text == "自定义":
+            self.memory_input.setVisible(True)
+        else:
+            self.memory_input.setVisible(False)
+    
     def launch_game(self):
         if not self.current_profile:
             QMessageBox.warning(self, "错误", "请先登录！")
@@ -401,12 +451,19 @@ class PMCL(QMainWindow):
         if not os.path.exists(jar_path):
             QMessageBox.warning(self, "错误", f"未找到 {jar_path}，请先下载！")
             return
-            
-        # 构建启动命令
+        
+        # 获取内存参数
+        memory = self.memory_combo.currentText()
+        if memory == "自定义":
+            memory = self.memory_input.text().strip()
+            if not memory:
+                QMessageBox.warning(self, "错误", "请输入自定义内存大小，如 6G 或 4096M")
+                return
+        
         java_path = "java"  # 假设Java在系统PATH中
         game_args = [
             java_path,
-            "-Xmx2G",  # 最大内存
+            f"-Xmx{memory}",  # 最大内存
             "-XX:+UnlockExperimentalVMOptions",
             "-XX:+UseG1GC",
             "-XX:G1NewSizePercent=20",
@@ -432,6 +489,14 @@ class PMCL(QMainWindow):
             QMessageBox.information(self, "提示", f"已启动Minecraft {version}")
         except Exception as e:
             QMessageBox.warning(self, "错误", f"启动失败: {e}")
+
+    def try_auto_login(self):
+        """尝试自动登录"""
+        dialog = LoginDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            self.current_profile = dialog.current_profile
+            self.login_label.setText(f"已登录: {self.current_profile['name']} ({self.current_profile['type']})")
+            self.login_button.setText("切换账号")
 
 def main():
     app = QApplication(sys.argv)
