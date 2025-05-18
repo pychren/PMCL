@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                            QHBoxLayout, QPushButton, QComboBox, QLabel,
                            QLineEdit, QMessageBox, QFileDialog, QProgressBar,
                            QDialog, QTabWidget, QFormLayout, QGroupBox,
-                           QCheckBox)
+                           QCheckBox, QSizePolicy)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from downloader import MinecraftDownloader
 from auth import MinecraftAuth
@@ -213,6 +213,70 @@ class PMCL(QMainWindow):
         super().__init__()
         self.setWindowTitle("PMCL - Python Minecraft Launcher")
         self.setMinimumSize(800, 600)
+        # 设置全局QSS美化
+        self.setStyleSheet("""
+            QWidget {
+                background: #f6f8fa;
+                font-family: '微软雅黑', 'Microsoft YaHei', Arial, sans-serif;
+                font-size: 15px;
+            }
+            QGroupBox {
+                border: 1.5px solid #b0b0b0;
+                border-radius: 10px;
+                margin-top: 15px;
+                background: #fff;
+                font-size: 17px;
+                font-weight: bold;
+                padding: 8px;
+            }
+            QGroupBox:title {
+                subcontrol-origin: margin;
+                left: 15px;
+                top: 2px;
+                color: #4f8cff;
+                font-size: 18px;
+            }
+            QLabel {
+                color: #222;
+                font-size: 15px;
+            }
+            QLineEdit, QComboBox {
+                border: 1.5px solid #b0b0b0;
+                border-radius: 8px;
+                padding: 10px 18px;
+                font-size: 15px;
+                background: #fafdff;
+            }
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4f8cff, stop:1 #38e6c5);
+                color: #fff;
+                border: none;
+                border-radius: 10px;
+                padding: 12px 32px;
+                font-size: 16px;
+                font-weight: bold;
+                margin: 3px 0;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #38e6c5, stop:1 #4f8cff);
+                color: #fff;
+            }
+            QProgressBar {
+                border: 1.5px solid #b0b0b0;
+                border-radius: 10px;
+                text-align: center;
+                font-size: 15px;
+                background: #e9ecef;
+                height: 24px;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4f8cff, stop:1 #38e6c5);
+                border-radius: 10px;
+            }
+            QCheckBox {
+                font-size: 15px;
+            }
+        """)
         
         # 初始化配置
         self.config = self.load_config()
@@ -258,7 +322,10 @@ class PMCL(QMainWindow):
         self.login_button.clicked.connect(self.show_login_dialog)
         login_layout.addWidget(self.login_label)
         login_layout.addWidget(self.login_button)
-        
+        login_layout.addStretch()
+        login_group = QGroupBox("账号管理")
+        login_group.setLayout(login_layout)
+
         # 游戏目录选择
         dir_layout = QHBoxLayout()
         self.dir_label = QLabel("游戏目录:")
@@ -266,21 +333,25 @@ class PMCL(QMainWindow):
         self.dir_input.setText(self.config.get('game_dir', ''))
         self.dir_button = QPushButton("浏览")
         self.dir_button.clicked.connect(self.select_game_dir)
-        
         dir_layout.addWidget(self.dir_label)
         dir_layout.addWidget(self.dir_input)
         dir_layout.addWidget(self.dir_button)
-        
+        dir_layout.addStretch()
+        dir_group = QGroupBox("游戏目录")
+        dir_group.setLayout(dir_layout)
+
         # 版本选择
         version_layout = QHBoxLayout()
         self.version_label = QLabel("游戏版本:")
         self.version_combo = QComboBox()
         all_versions = get_all_minecraft_versions()
         self.version_combo.addItems(all_versions)
-        
         version_layout.addWidget(self.version_label)
         version_layout.addWidget(self.version_combo)
-        
+        version_layout.addStretch()
+        version_group = QGroupBox("游戏版本")
+        version_group.setLayout(version_layout)
+
         # 内存管理
         memory_layout = QHBoxLayout()
         self.memory_label = QLabel("最大内存:")
@@ -293,8 +364,11 @@ class PMCL(QMainWindow):
         memory_layout.addWidget(self.memory_label)
         memory_layout.addWidget(self.memory_combo)
         memory_layout.addWidget(self.memory_input)
+        memory_layout.addStretch()
         self.memory_combo.currentTextChanged.connect(self.on_memory_combo_changed)
-        
+        memory_group = QGroupBox("内存管理")
+        memory_group.setLayout(memory_layout)
+
         # 下载队列管理
         queue_layout = QHBoxLayout()
         self.version_check = QPushButton("添加主程序到队列")
@@ -303,39 +377,87 @@ class PMCL(QMainWindow):
         self.assets_check.clicked.connect(lambda: self.add_to_queue('assets'))
         queue_layout.addWidget(self.version_check)
         queue_layout.addWidget(self.assets_check)
-        
+        queue_layout.addStretch()
+        queue_group = QGroupBox("下载管理")
+        queue_group.setLayout(queue_layout)
+
+        # 模组管理
+        mod_group = QGroupBox("模组管理")
+        mod_layout = QVBoxLayout()
+        self.mod_list = QComboBox()
+        self.refresh_mod_list()
+        self.mod_list.setMinimumWidth(220)
+
+        # 按钮横向布局
+        btn_layout = QHBoxLayout()
+        self.add_mod_button = QPushButton("添加本地模组")
+        self.delete_mod_button = QPushButton("删除选中模组")
+        btn_layout.addWidget(self.add_mod_button)
+        btn_layout.addSpacing(10)
+        btn_layout.addWidget(self.delete_mod_button)
+
+        # 搜索横向布局
+        search_layout = QHBoxLayout()
+        self.search_mod_input = QLineEdit()
+        self.search_mod_input.setPlaceholderText("输入模组名（如 sodium）")
+        self.search_mod_input.setMinimumWidth(220)
+        self.search_mod_button = QPushButton("在线搜索并下载")
+        search_layout.addWidget(self.search_mod_input)
+        search_layout.addSpacing(10)
+        search_layout.addWidget(self.search_mod_button)
+
+        self.add_mod_button.clicked.connect(self.add_local_mod)
+        self.delete_mod_button.clicked.connect(self.delete_selected_mod)
+        self.search_mod_button.clicked.connect(self.download_online_mod)
+
+        mod_layout.addWidget(self.mod_list)
+        mod_layout.addLayout(btn_layout)
+        mod_layout.addLayout(search_layout)
+        mod_group.setLayout(mod_layout)
+
         # 下载按钮
         self.download_button = QPushButton("开始下载队列")
         self.download_button.clicked.connect(self.download_game)
-        
         # 暂停/继续按钮
         self.pause_button = QPushButton("暂停下载")
         self.pause_button.clicked.connect(self.pause_or_resume)
         self.is_paused = False
-        
         # 进度条
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(True)
-        
         # 状态标签
         self.status_label = QLabel("")
-        
         # 启动按钮
         self.launch_button = QPushButton("启动游戏")
         self.launch_button.clicked.connect(self.launch_game)
-        
-        # 添加所有布局
-        self.layout.addLayout(login_layout)
-        self.layout.addLayout(dir_layout)
-        self.layout.addLayout(version_layout)
-        self.layout.addLayout(memory_layout)
-        self.layout.addLayout(queue_layout)
+
+        # 主布局
+        self.layout.addWidget(login_group)
+        self.layout.addWidget(dir_group)
+        self.layout.addWidget(version_group)
+        self.layout.addWidget(memory_group)
+        self.layout.addWidget(queue_group)
+        self.layout.addWidget(mod_group)
         self.layout.addWidget(self.download_button)
         self.layout.addWidget(self.pause_button)
         self.layout.addWidget(self.progress_bar)
         self.layout.addWidget(self.status_label)
         self.layout.addWidget(self.launch_button)
         self.layout.addStretch()
+        
+        # 控件宽度优化
+        self.mod_list.setMinimumWidth(220)
+        self.search_mod_input.setMinimumWidth(220)
+        self.version_combo.setMinimumWidth(120)
+        self.dir_input.setMinimumWidth(250)
+        self.memory_input.setMinimumWidth(100)
+        self.login_label.setMinimumWidth(120)
+        # 按钮自适应扩展
+        self.add_mod_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.delete_mod_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.download_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.pause_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.launch_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     
     def show_login_dialog(self):
         dialog = LoginDialog(self)
@@ -497,6 +619,71 @@ class PMCL(QMainWindow):
             self.current_profile = dialog.current_profile
             self.login_label.setText(f"已登录: {self.current_profile['name']} ({self.current_profile['type']})")
             self.login_button.setText("切换账号")
+
+    def refresh_mod_list(self):
+        mods_dir = os.path.join(self.config.get('game_dir', ''), 'mods')
+        if not os.path.exists(mods_dir):
+            os.makedirs(mods_dir, exist_ok=True)
+        self.mod_list.clear()
+        for f in os.listdir(mods_dir):
+            if f.endswith('.jar'):
+                self.mod_list.addItem(f)
+
+    def add_local_mod(self):
+        mods_dir = os.path.join(self.config.get('game_dir', ''), 'mods')
+        file_path, _ = QFileDialog.getOpenFileName(self, "选择模组文件", "", "Mod 文件 (*.jar)")
+        if file_path:
+            import shutil
+            shutil.copy(file_path, mods_dir)
+            self.refresh_mod_list()
+            QMessageBox.information(self, "成功", "模组已添加！")
+
+    def delete_selected_mod(self):
+        mods_dir = os.path.join(self.config.get('game_dir', ''), 'mods')
+        mod_name = self.mod_list.currentText()
+        if mod_name:
+            os.remove(os.path.join(mods_dir, mod_name))
+            self.refresh_mod_list()
+            QMessageBox.information(self, "成功", "模组已删除！")
+
+    def download_online_mod(self):
+        mod_name = self.search_mod_input.text().strip()
+        if not mod_name:
+            QMessageBox.warning(self, "错误", "请输入模组名！")
+            return
+        # 使用 Modrinth API 搜索
+        url = f"https://api.modrinth.com/v2/search?query={mod_name}&facets=[[\"project_type:mod\"]]"
+        try:
+            resp = requests.get(url, timeout=10)
+            data = resp.json()
+            if not data['hits']:
+                QMessageBox.warning(self, "未找到", "未找到相关模组")
+                return
+            # 取第一个结果
+            mod = data['hits'][0]
+            project_id = mod['project_id']
+            # 获取最新版本文件
+            files_url = f"https://api.modrinth.com/v2/project/{project_id}/version"
+            files_resp = requests.get(files_url, timeout=10)
+            files = files_resp.json()
+            if not files:
+                QMessageBox.warning(self, "未找到", "未找到模组文件")
+                return
+            # 取第一个文件的第一个下载链接
+            file_url = files[0]['files'][0]['url']
+            mods_dir = os.path.join(self.config.get('game_dir', ''), 'mods')
+            if not os.path.exists(mods_dir):
+                os.makedirs(mods_dir, exist_ok=True)
+            file_name = files[0]['files'][0]['filename']
+            file_path = os.path.join(mods_dir, file_name)
+            with requests.get(file_url, stream=True) as r:
+                with open(file_path, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+            self.refresh_mod_list()
+            QMessageBox.information(self, "成功", f"模组 {file_name} 已下载！")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"下载失败: {e}")
 
 def main():
     app = QApplication(sys.argv)
