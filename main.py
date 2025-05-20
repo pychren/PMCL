@@ -11,6 +11,8 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from downloader import MinecraftDownloader
 from auth import MinecraftAuth
 import subprocess
+import winreg
+import time
 
 # 添加PMCL目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -465,6 +467,7 @@ class PMCL(QMainWindow):
             self.current_profile = dialog.current_profile
             self.login_label.setText(f"已登录: {self.current_profile['name']} ({self.current_profile['type']})")
             self.login_button.setText("切换账号")
+            self.save_login_to_registry(self.current_profile)
     
     def add_to_queue(self, task):
         if task not in self.download_queue:
@@ -487,20 +490,30 @@ class PMCL(QMainWindow):
             self.save_config()
             
     def load_config(self):
-        config_path = os.path.join('PMCL', 'config', 'launcher_config.json')
-        if os.path.exists(config_path):
-            try:
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except:
-                return {}
-        return {}
-    
+        config = {}
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\\PMCL\\Config")
+            i = 0
+            while True:
+                try:
+                    name, value, _ = winreg.EnumValue(key, i)
+                    config[name] = value
+                    i += 1
+                except OSError:
+                    break
+            winreg.CloseKey(key)
+        except Exception as e:
+            print("读取注册表配置失败：", e)
+        return config
+
     def save_config(self):
-        config_path = os.path.join('PMCL', 'config', 'launcher_config.json')
-        os.makedirs(os.path.dirname(config_path), exist_ok=True)
-        with open(config_path, 'w', encoding='utf-8') as f:
-            json.dump(self.config, f, ensure_ascii=False, indent=4)
+        try:
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\\PMCL\\Config")
+            for k, v in self.config.items():
+                winreg.SetValueEx(key, k, 0, winreg.REG_SZ, str(v))
+            winreg.CloseKey(key)
+        except Exception as e:
+            print("写入注册表配置失败：", e)
     
     def download_game(self):
         game_dir = self.dir_input.text()
@@ -684,6 +697,17 @@ class PMCL(QMainWindow):
             QMessageBox.information(self, "成功", f"模组 {file_name} 已下载！")
         except Exception as e:
             QMessageBox.warning(self, "错误", f"下载失败: {e}")
+
+    def save_login_to_registry(self, profile):
+        try:
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\\PMCL\\LastLogin")
+            winreg.SetValueEx(key, "username", 0, winreg.REG_SZ, profile.get("name", ""))
+            winreg.SetValueEx(key, "uuid", 0, winreg.REG_SZ, profile.get("uuid", ""))
+            winreg.SetValueEx(key, "type", 0, winreg.REG_SZ, profile.get("type", ""))
+            winreg.SetValueEx(key, "timestamp", 0, winreg.REG_SZ, str(int(time.time())))
+            winreg.CloseKey(key)
+        except Exception as e:
+            print("写入注册表失败：", e)
 
 def main():
     app = QApplication(sys.argv)
