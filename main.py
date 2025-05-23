@@ -21,8 +21,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 def get_all_minecraft_versions():
     # 自动选择最快镜像
     from downloader import MinecraftDownloader
-    # 临时用一个目录初始化downloader
-    temp_downloader = MinecraftDownloader(os.getcwd())
+    # 获取 .minecraft 路径
+    project_root = os.path.abspath(os.path.dirname(__file__))
+    minecraft_dir = os.path.join(project_root, '.minecraft')
+    temp_downloader = MinecraftDownloader(minecraft_dir)
     mirror = temp_downloader.get_fastest_mirror()
     print(f"[INFO] 选择的镜像: {mirror['name']} {mirror['manifest']}")
     try:
@@ -309,7 +311,7 @@ class PMCL(QMainWindow):
         self.try_auto_login()
     
     def find_or_create_minecraft_dir(self):
-        """在项目主目录下查找或创建.minecraft目录"""
+        """只查找或创建.minecraft目录，不再创建PMCL文件夹"""
         project_root = os.path.abspath(os.path.dirname(__file__))
         minecraft_dir = os.path.join(project_root, '.minecraft')
         if not os.path.exists(minecraft_dir):
@@ -322,31 +324,20 @@ class PMCL(QMainWindow):
         self.save_config()
     
     def create_ui(self):
-        # 登录信息
-        login_layout = QHBoxLayout()
-        self.login_label = QLabel("未登录")
-        self.login_button = QPushButton("登录")
-        self.login_button.clicked.connect(self.show_login_dialog)
-        login_layout.addWidget(self.login_label)
-        login_layout.addWidget(self.login_button)
-        login_layout.addStretch()
-        login_group = QGroupBox("账号管理")
-        login_group.setLayout(login_layout)
+        # 主Tab控件
+        self.tabs = QTabWidget()
+        self.tab_launch = QWidget()
+        self.tab_login = QWidget()
+        self.tab_download = QWidget()
+        self.tab_settings = QWidget()
+        self.tabs.addTab(self.tab_launch, "启动")
+        self.tabs.addTab(self.tab_login, "登录")
+        self.tabs.addTab(self.tab_download, "下载")
+        self.tabs.addTab(self.tab_settings, "设置")
+        self.layout.addWidget(self.tabs)
 
-        # 游戏目录选择
-        dir_layout = QHBoxLayout()
-        self.dir_label = QLabel("游戏目录:")
-        self.dir_input = QLineEdit()
-        self.dir_input.setText(self.config.get('game_dir', ''))
-        self.dir_button = QPushButton("浏览")
-        self.dir_button.clicked.connect(self.select_game_dir)
-        dir_layout.addWidget(self.dir_label)
-        dir_layout.addWidget(self.dir_input)
-        dir_layout.addWidget(self.dir_button)
-        dir_layout.addStretch()
-        dir_group = QGroupBox("游戏目录")
-        dir_group.setLayout(dir_layout)
-
+        # 启动Tab
+        launch_layout = QVBoxLayout()
         # 版本选择
         version_layout = QHBoxLayout()
         self.version_label = QLabel("游戏版本:")
@@ -355,7 +346,9 @@ class PMCL(QMainWindow):
         self.version_combo.addItems(all_versions)
         # 显示当前镜像
         from downloader import MinecraftDownloader
-        temp_downloader = MinecraftDownloader(os.getcwd())
+        project_root = os.path.abspath(os.path.dirname(__file__))
+        minecraft_dir = os.path.join(project_root, '.minecraft')
+        temp_downloader = MinecraftDownloader(minecraft_dir)
         mirror = temp_downloader.get_fastest_mirror()
         self.mirror_label = QLabel(f"当前镜像: {mirror['name']}")
         version_layout.addWidget(self.version_label)
@@ -364,7 +357,6 @@ class PMCL(QMainWindow):
         version_layout.addStretch()
         version_group = QGroupBox("游戏版本")
         version_group.setLayout(version_layout)
-
         # 内存管理
         memory_layout = QHBoxLayout()
         self.memory_label = QLabel("最大内存:")
@@ -381,7 +373,34 @@ class PMCL(QMainWindow):
         self.memory_combo.currentTextChanged.connect(self.on_memory_combo_changed)
         memory_group = QGroupBox("内存管理")
         memory_group.setLayout(memory_layout)
+        # 启动按钮
+        self.launch_button = QPushButton("启动游戏")
+        self.launch_button.clicked.connect(self.launch_game)
+        self.launch_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        launch_layout.addWidget(version_group)
+        launch_layout.addWidget(memory_group)
+        launch_layout.addWidget(self.launch_button)
+        launch_layout.addStretch()
+        self.tab_launch.setLayout(launch_layout)
 
+        # 登录Tab
+        login_layout = QVBoxLayout()
+        login_hlayout = QHBoxLayout()
+        self.login_label = QLabel("未登录")
+        self.login_button = QPushButton("登录/切换账号")
+        self.login_button.clicked.connect(self.show_login_dialog)
+        self.login_label.setMinimumWidth(120)
+        login_hlayout.addWidget(self.login_label)
+        login_hlayout.addWidget(self.login_button)
+        login_hlayout.addStretch()
+        login_group = QGroupBox("账号管理")
+        login_group.setLayout(login_hlayout)
+        login_layout.addWidget(login_group)
+        login_layout.addStretch()
+        self.tab_login.setLayout(login_layout)
+
+        # 下载Tab
+        download_layout = QVBoxLayout()
         # 下载队列管理
         queue_layout = QHBoxLayout()
         self.version_check = QPushButton("添加主程序到队列")
@@ -393,14 +412,26 @@ class PMCL(QMainWindow):
         queue_layout.addStretch()
         queue_group = QGroupBox("下载管理")
         queue_group.setLayout(queue_layout)
-
+        # 下载按钮
+        self.download_button = QPushButton("开始下载队列")
+        self.download_button.clicked.connect(self.download_game)
+        self.download_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        # 暂停/继续按钮
+        self.pause_button = QPushButton("暂停下载")
+        self.pause_button.clicked.connect(self.pause_or_resume)
+        self.pause_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.is_paused = False
+        # 进度条
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(True)
+        # 状态标签
+        self.status_label = QLabel("")
         # 模组管理
         mod_group = QGroupBox("模组管理")
         mod_layout = QVBoxLayout()
         self.mod_list = QComboBox()
         self.refresh_mod_list()
         self.mod_list.setMinimumWidth(220)
-
         # 按钮横向布局
         btn_layout = QHBoxLayout()
         self.add_mod_button = QPushButton("添加本地模组")
@@ -408,7 +439,6 @@ class PMCL(QMainWindow):
         btn_layout.addWidget(self.add_mod_button)
         btn_layout.addSpacing(10)
         btn_layout.addWidget(self.delete_mod_button)
-
         # 搜索横向布局
         search_layout = QHBoxLayout()
         self.search_mod_input = QLineEdit()
@@ -418,59 +448,40 @@ class PMCL(QMainWindow):
         search_layout.addWidget(self.search_mod_input)
         search_layout.addSpacing(10)
         search_layout.addWidget(self.search_mod_button)
-
         self.add_mod_button.clicked.connect(self.add_local_mod)
         self.delete_mod_button.clicked.connect(self.delete_selected_mod)
         self.search_mod_button.clicked.connect(self.download_online_mod)
-
         mod_layout.addWidget(self.mod_list)
         mod_layout.addLayout(btn_layout)
         mod_layout.addLayout(search_layout)
         mod_group.setLayout(mod_layout)
+        download_layout.addWidget(queue_group)
+        download_layout.addWidget(self.download_button)
+        download_layout.addWidget(self.pause_button)
+        download_layout.addWidget(self.progress_bar)
+        download_layout.addWidget(self.status_label)
+        download_layout.addWidget(mod_group)
+        download_layout.addStretch()
+        self.tab_download.setLayout(download_layout)
 
-        # 下载按钮
-        self.download_button = QPushButton("开始下载队列")
-        self.download_button.clicked.connect(self.download_game)
-        # 暂停/继续按钮
-        self.pause_button = QPushButton("暂停下载")
-        self.pause_button.clicked.connect(self.pause_or_resume)
-        self.is_paused = False
-        # 进度条
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(True)
-        # 状态标签
-        self.status_label = QLabel("")
-        # 启动按钮
-        self.launch_button = QPushButton("启动游戏")
-        self.launch_button.clicked.connect(self.launch_game)
-
-        # 主布局
-        self.layout.addWidget(login_group)
-        self.layout.addWidget(dir_group)
-        self.layout.addWidget(version_group)
-        self.layout.addWidget(memory_group)
-        self.layout.addWidget(queue_group)
-        self.layout.addWidget(mod_group)
-        self.layout.addWidget(self.download_button)
-        self.layout.addWidget(self.pause_button)
-        self.layout.addWidget(self.progress_bar)
-        self.layout.addWidget(self.status_label)
-        self.layout.addWidget(self.launch_button)
-        self.layout.addStretch()
-        
-        # 控件宽度优化
-        self.mod_list.setMinimumWidth(220)
-        self.search_mod_input.setMinimumWidth(220)
-        self.version_combo.setMinimumWidth(120)
+        # 设置Tab
+        settings_layout = QVBoxLayout()
+        dir_layout = QHBoxLayout()
+        self.dir_label = QLabel("游戏目录:")
+        self.dir_input = QLineEdit()
+        self.dir_input.setText(self.config.get('game_dir', ''))
+        self.dir_button = QPushButton("浏览")
+        self.dir_button.clicked.connect(self.select_game_dir)
         self.dir_input.setMinimumWidth(250)
-        self.memory_input.setMinimumWidth(100)
-        self.login_label.setMinimumWidth(120)
-        # 按钮自适应扩展
-        self.add_mod_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.delete_mod_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.download_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.pause_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.launch_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        dir_layout.addWidget(self.dir_label)
+        dir_layout.addWidget(self.dir_input)
+        dir_layout.addWidget(self.dir_button)
+        dir_layout.addStretch()
+        dir_group = QGroupBox("游戏目录")
+        dir_group.setLayout(dir_layout)
+        settings_layout.addWidget(dir_group)
+        settings_layout.addStretch()
+        self.tab_settings.setLayout(settings_layout)
     
     def show_login_dialog(self):
         dialog = LoginDialog(self)
@@ -502,6 +513,7 @@ class PMCL(QMainWindow):
             
     def load_config(self):
         config = {}
+        # 1. 先尝试从注册表读取
         try:
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\\PMCL\\Config")
             i = 0
@@ -513,8 +525,24 @@ class PMCL(QMainWindow):
                 except OSError:
                     break
             winreg.CloseKey(key)
-        except Exception as e:
-            print("读取注册表配置失败：", e)
+        except Exception:
+            pass
+        # 2. 如果注册表没有内容，尝试读取本地文件并导入
+        if not config:
+            config_path = os.path.join('PMCL', 'config', 'launcher_config.json')
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        config = json.load(f)
+                    # 写入注册表
+                    key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\\PMCL\\Config")
+                    for k, v in config.items():
+                        winreg.SetValueEx(key, k, 0, winreg.REG_SZ, str(v))
+                    winreg.CloseKey(key)
+                    print("[INFO] 已自动导入本地配置到注册表")
+                    # 可选：os.remove(config_path)
+                except Exception as e:
+                    print("导入本地配置失败：", e)
         return config
 
     def save_config(self):

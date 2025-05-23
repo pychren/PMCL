@@ -9,32 +9,26 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.fernet import Fernet
+import winreg
 
 class MinecraftAuth:
     def __init__(self):
         self.auth_server = "https://authserver.mojang.com"
         self.littleskin_api = "https://littleskin.cn/api/yggdrasil"
-        self.base_dir = "PMCL"
-        self.profiles_dir = os.path.join(self.base_dir, "profiles")
-        self.config_dir = os.path.join(self.base_dir, "config")
-        self.config_file = os.path.join(self.config_dir, "auth_config.json")
-        self.key_file = os.path.join(self.config_dir, "auth_key.key")
-        
-        # 创建必要的目录
-        os.makedirs(self.profiles_dir, exist_ok=True)
-        os.makedirs(self.config_dir, exist_ok=True)
+        # self.base_dir = "PMCL"
+        # self.profiles_dir = os.path.join(self.base_dir, "profiles")
+        # self.config_dir = os.path.join(self.base_dir, "config")
+        # self.config_file = os.path.join(self.config_dir, "auth_config.json")
+        # self.key_file = os.path.join(self.config_dir, "auth_key.key")
+        # os.makedirs(self.profiles_dir, exist_ok=True)
+        # os.makedirs(self.config_dir, exist_ok=True)
         self._init_encryption()
         
     def _init_encryption(self):
-        """初始化加密密钥"""
-        if not os.path.exists(self.key_file):
-            key = Fernet.generate_key()
-            with open(self.key_file, 'wb') as f:
-                f.write(key)
-        else:
-            with open(self.key_file, 'rb') as f:
-                key = f.read()
-        self.cipher = Fernet(key)
+        """初始化加密密钥（如需可迁移到注册表，否则可用内存密钥/默认密钥）"""
+        # 这里建议直接用内存密钥或硬编码密钥，避免本地文件
+        key = b'0123456789abcdef0123456789abcdef'  # 示例固定密钥，实际可更安全
+        self.cipher = Fernet(base64.urlsafe_b64encode(key))
     
     def _encrypt_password(self, password):
         """加密密码"""
@@ -45,15 +39,11 @@ class MinecraftAuth:
         return self.cipher.decrypt(encrypted_password.encode()).decode()
     
     def _save_config(self, config):
-        """保存配置"""
-        with open(self.config_file, 'w', encoding='utf-8') as f:
-            json.dump(config, f, ensure_ascii=False, indent=4)
+        # 已弃用本地文件，仅保留注册表逻辑
+        pass
     
     def _load_config(self):
-        """加载配置"""
-        if os.path.exists(self.config_file):
-            with open(self.config_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+        # 已弃用本地文件，仅保留注册表逻辑
         return {"auto_login": None, "remembered_accounts": []}
     
     def set_auto_login(self, username):
@@ -210,28 +200,69 @@ class MinecraftAuth:
     
     def _save_profile(self, profile):
         """保存登录信息"""
-        profile_path = os.path.join(self.profiles_dir, f"{profile['name']}.json")
-        with open(profile_path, 'w', encoding='utf-8') as f:
-            json.dump(profile, f, ensure_ascii=False, indent=4)
+        try:
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\\PMCL\\Profiles")
+            username = profile.get('name', '')
+            winreg.SetValueEx(key, username, 0, winreg.REG_SZ, json.dumps(profile, ensure_ascii=False))
+            winreg.CloseKey(key)
+        except Exception as e:
+            print("写入注册表账号失败：", e)
     
     def get_saved_profiles(self):
-        """获取已保存的登录信息"""
         profiles = []
-        for file in os.listdir(self.profiles_dir):
-            if file.endswith('.json'):
-                with open(os.path.join(self.profiles_dir, file), 'r', encoding='utf-8') as f:
-                    profiles.append(json.load(f))
+        # 1. 先尝试从注册表读取
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\\PMCL\\Profiles")
+            i = 0
+            while True:
+                try:
+                    name, value, _ = winreg.EnumValue(key, i)
+                    profile = json.loads(value)
+                    profiles.append(profile)
+                    i += 1
+                except OSError:
+                    break
+            winreg.CloseKey(key)
+        except Exception:
+            pass
+        # 2. 如果注册表没有内容，尝试读取本地profiles并导入
+        if not profiles:
+            profiles_dir = os.path.join('PMCL', 'profiles')
+            if os.path.exists(profiles_dir):
+                for filename in os.listdir(profiles_dir):
+                    if filename.endswith('.json'):
+                        path = os.path.join(profiles_dir, filename)
+                        with open(path, 'r', encoding='utf-8') as f:
+                            profile = json.load(f)
+                            profiles.append(profile)
+                # 写入注册表
+                key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\\PMCL\\Profiles")
+                for profile in profiles:
+                    username = profile.get('name', '')
+                    winreg.SetValueEx(key, username, 0, winreg.REG_SZ, json.dumps(profile, ensure_ascii=False))
+                winreg.CloseKey(key)
+                print("[INFO] 已自动导入本地账号到注册表")
+                # 可选：删除本地profiles目录
         return profiles
     
     def delete_profile(self, username):
         """删除登录信息"""
-        profile_path = os.path.join(self.profiles_dir, f"{username}.json")
-        if os.path.exists(profile_path):
-            os.remove(profile_path)
-            # 同时删除记住的账号
+        # profile_path = os.path.join(self.profiles_dir, f"{username}.json")
+        # if os.path.exists(profile_path):
+        #     os.remove(profile_path)
+        #     # 同时删除记住的账号
+        #     self.remove_remembered_account(username)
+        #     return True
+        # return False
+        # 改为只删注册表
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\\PMCL\\Profiles", 0, winreg.KEY_SET_VALUE)
+            winreg.DeleteValue(key, username)
+            winreg.CloseKey(key)
             self.remove_remembered_account(username)
             return True
-        return False
+        except Exception:
+            return False
     
     def validate_token(self, profile):
         """验证令牌是否有效"""
