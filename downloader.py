@@ -6,20 +6,57 @@ import time
 from urllib.parse import urljoin
 from threading import Event
 
+MIRROR_LIST = [
+    {
+        "name": "BMCLAPI",
+        "manifest": "https://bmclapi2.bangbang93.com/mc/game/version_manifest.json",
+        "base": "https://bmclapi2.bangbang93.com/"
+    },
+    {
+        "name": "Mcbbs",
+        "manifest": "https://download.mcbbs.net/mc/game/version_manifest.json",
+        "base": "https://download.mcbbs.net/"
+    },
+    {
+        "name": "Mojang",
+        "manifest": "https://launchermeta.mojang.com/mc/game/version_manifest.json",
+        "base": "https://launchermeta.mojang.com/"
+    }
+]
+
 class MinecraftDownloader:
     def __init__(self, game_dir):
         self.game_dir = game_dir
         self.versions_dir = os.path.join(game_dir, "versions")
         self.libraries_dir = os.path.join(game_dir, "libraries")
         self.assets_dir = os.path.join(game_dir, "assets")
-        self.version_manifest_url = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
         self.pause_event = Event()
         self.pause_event.set()  # 默认不暂停
+        self.current_mirror = self.select_fastest_mirror()
+        self.version_manifest_url = self.current_mirror["manifest"]
         
         # 创建必要的目录
         for directory in [self.versions_dir, self.libraries_dir, self.assets_dir]:
             os.makedirs(directory, exist_ok=True)
     
+    def select_fastest_mirror(self):
+        best = None
+        best_time = float('inf')
+        for mirror in MIRROR_LIST:
+            try:
+                start = time.time()
+                resp = requests.get(mirror["manifest"], timeout=3)
+                elapsed = time.time() - start
+                if resp.status_code == 200 and elapsed < best_time:
+                    best = mirror
+                    best_time = elapsed
+            except Exception as e:
+                continue
+        return best if best else MIRROR_LIST[0]
+
+    def get_fastest_mirror(self):
+        return self.current_mirror
+
     def get_version_manifest(self):
         """获取版本清单"""
         response = requests.get(self.version_manifest_url)

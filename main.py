@@ -19,9 +19,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 动态获取所有Minecraft版本
 def get_all_minecraft_versions():
-    url = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
+    # 自动选择最快镜像
+    from downloader import MinecraftDownloader
+    # 临时用一个目录初始化downloader
+    temp_downloader = MinecraftDownloader(os.getcwd())
+    mirror = temp_downloader.get_fastest_mirror()
+    print(f"[INFO] 选择的镜像: {mirror['name']} {mirror['manifest']}")
     try:
-        resp = requests.get(url, timeout=10)
+        resp = requests.get(mirror['manifest'], timeout=10)
         data = resp.json()
         return [v["id"] for v in data["versions"]]
     except Exception as e:
@@ -348,8 +353,14 @@ class PMCL(QMainWindow):
         self.version_combo = QComboBox()
         all_versions = get_all_minecraft_versions()
         self.version_combo.addItems(all_versions)
+        # 显示当前镜像
+        from downloader import MinecraftDownloader
+        temp_downloader = MinecraftDownloader(os.getcwd())
+        mirror = temp_downloader.get_fastest_mirror()
+        self.mirror_label = QLabel(f"当前镜像: {mirror['name']}")
         version_layout.addWidget(self.version_label)
         version_layout.addWidget(self.version_combo)
+        version_layout.addWidget(self.mirror_label)
         version_layout.addStretch()
         version_group = QGroupBox("游戏版本")
         version_group.setLayout(version_layout)
