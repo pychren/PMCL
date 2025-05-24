@@ -430,13 +430,6 @@ class PMCL(QMainWindow):
 
     def add_to_queue(self, task):
         # 将任务添加到下载队列的操作委托给DownloadManagerUI
-        # Before adding to queue, ensure the correct version game directory is used by the downloader
-        selected_version = self.download_version_combo.currentText()
-        version_game_dir = self.get_version_game_dir(selected_version)
-        self.download_manager.downloader = MinecraftDownloader(version_game_dir, self.download_manager.config_manager.load_config().get('mirror_source'))
-        # Note: This might re-initialize the downloader unnecessarily. Consider passing game_dir to add_to_queue or downloader methods.
-        # For now, let's keep this simple and re-initialize.
-
         self.download_manager.add_to_queue(task)
     
     def select_game_dir(self):
