@@ -38,6 +38,15 @@ class ConfigManager:
                     # 可选：os.remove(config_path)
                 except Exception as e:
                     print("导入本地配置失败：", e)
+        # Add default mirror source if not present
+        if 'mirror_source' not in config:
+            config['mirror_source'] = 'https://bmclapi2.bangbang93.com/'  # Default mirror source
+        # Add default versions base directory if not present
+        if 'versions_base_dir' not in config:
+            # Set default to a directory named 'versions_isolated' in the project root
+            project_root = os.path.abspath(os.path.dirname(__file__))
+            default_versions_base_dir = os.path.join(os.path.dirname(project_root), 'versions_isolated')
+            config['versions_base_dir'] = default_versions_base_dir
         return config
 
     def save_config(self, config):

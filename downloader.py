@@ -25,14 +25,24 @@ MIRROR_LIST = [
 ]
 
 class MinecraftDownloader:
-    def __init__(self, game_dir):
+    def __init__(self, game_dir, mirror_source=None):
         self.game_dir = game_dir
         self.versions_dir = os.path.join(game_dir, "versions")
         self.libraries_dir = os.path.join(game_dir, "libraries")
         self.assets_dir = os.path.join(game_dir, "assets")
         self.pause_event = Event()
         self.pause_event.set()  # 默认不暂停
-        self.current_mirror = self.select_fastest_mirror()
+        if mirror_source:
+            # Use the provided mirror source URL directly
+            self.current_mirror = {
+                "name": f"Custom ({mirror_source})",
+                "manifest": urljoin(mirror_source, "mc/game/version_manifest.json"),
+                "base": mirror_source
+            }
+        else:
+            # If no mirror source is provided, select the fastest from the predefined list
+            self.current_mirror = self.select_fastest_mirror()
+
         self.version_manifest_url = self.current_mirror["manifest"]
         
         # 创建必要的目录
@@ -59,7 +69,7 @@ class MinecraftDownloader:
 
     def get_version_manifest(self):
         """获取版本清单"""
-        response = requests.get(self.version_manifest_url)
+        response = requests.get(self.current_mirror['manifest'])
         return response.json()
     
     def get_version_info(self, version):
@@ -122,7 +132,9 @@ class MinecraftDownloader:
         # 下载客户端
         client_path = os.path.join(self.versions_dir, version, f"{version}.jar")
         if not os.path.exists(client_path):
-            self.download_file(version_info["downloads"]["client"]["url"], client_path, progress_callback)
+            # Use the current mirror base URL for client download
+            client_url = urljoin(self.current_mirror['base'], version_info["downloads"]["client"]["url"].split('launchermeta.mojang.com/')[-1])
+            self.download_file(client_url, client_path, progress_callback)
         
         # 下载资源文件
         assets_index = version_info["assetIndex"]
@@ -141,7 +153,9 @@ class MinecraftDownloader:
             if artifact:
                 path = os.path.join(self.libraries_dir, artifact["path"])
                 if not os.path.exists(path):
-                    self.download_file(artifact["url"], path, progress_callback)
+                    # Use the current mirror base URL for library download
+                    library_url = urljoin(self.current_mirror['base'], artifact['url'].split('libraries.minecraft.net/')[-1])
+                    self.download_file(library_url, path, progress_callback)
         
         return True
     
@@ -165,8 +179,9 @@ class MinecraftDownloader:
             path = os.path.join(self.assets_dir, "objects", hash[:2], hash)
             
             if not os.path.exists(path):
-                url = f"https://resources.download.minecraft.net/{hash[:2]}/{hash}"
-                self.download_file(url, path, progress_callback)
+                # Use the current mirror base URL for asset download
+                asset_url = urljoin(self.current_mirror['base'], f"assets/{hash[:2]}/{hash}")
+                self.download_file(asset_url, path, progress_callback)
             
             downloaded_assets += 1
             if progress_callback:

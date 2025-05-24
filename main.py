@@ -126,9 +126,6 @@ class PMCL(QMainWindow):
         self.setCentralWidget(self.central_widget)
         self.layout = QVBoxLayout(self.central_widget)
         
-        # 查找或创建.minecraft目录
-        self.find_or_create_minecraft_dir()
-        
         # 创建界面元素 (先创建UI元素)
         self.create_ui()
         
@@ -149,19 +146,18 @@ class PMCL(QMainWindow):
         # 刷新本地已下载版本列表
         # self.refresh_local_versions() # 刷新本地版本列表也移到 create_ui 中，在管理器初始化后调用
     
-    def find_or_create_minecraft_dir(self):
-        """只查找或创建.minecraft目录，不再创建PMCL文件夹"""
-        project_root = os.path.abspath(os.path.dirname(__file__))
-        minecraft_dir = os.path.join(project_root, '.minecraft')
-        if not os.path.exists(minecraft_dir):
-            try:
-                os.makedirs(minecraft_dir, exist_ok=True)
-                QMessageBox.information(self, "提示", f"已在 {minecraft_dir} 创建新的.minecraft目录")
-            except Exception as e:
-                QMessageBox.warning(self, "错误", f"无法创建.minecraft目录: {str(e)}")
-        self.config['game_dir'] = minecraft_dir
-        self.config_manager.save_config(self.config)
-    
+    def get_version_game_dir(self, version):
+        """根据版本和配置获取版本隔离的游戏目录，并确保目录存在"""
+        versions_base_dir = self.config.get('versions_base_dir')
+        if not versions_base_dir:
+            # Fallback to default if not set in config (should not happen with default config)
+            project_root = os.path.abspath(os.path.dirname(__file__))
+            versions_base_dir = os.path.join(os.path.dirname(project_root), 'versions_isolated')
+
+        version_game_dir = os.path.join(versions_base_dir, version)
+        os.makedirs(version_game_dir, exist_ok=True)
+        return version_game_dir
+
     def create_ui(self):
         # 主Tab控件
         self.tabs = QTabWidget()
@@ -251,30 +247,52 @@ class PMCL(QMainWindow):
         download_version_group = QGroupBox("选择版本 (在线)")
         download_version_group.setLayout(download_version_layout)
 
-        # 下载队列管理
-        queue_layout = QHBoxLayout()
-        self.version_check = QPushButton("添加主程序到队列")
-        self.assets_check = QPushButton("添加资源到队列")
-        self.version_check.clicked.connect(lambda: self.add_to_queue('version'))
-        self.assets_check.clicked.connect(lambda: self.add_to_queue('assets'))
-        queue_layout.addWidget(self.version_check)
-        queue_layout.addWidget(self.assets_check)
-        queue_layout.addStretch()
-        queue_group = QGroupBox("下载管理")
-        queue_group.setLayout(queue_layout)
+        # Mirror source selection
+        mirror_layout = QHBoxLayout()
+        self.mirror_label = QLabel("选择镜像源:")
+        self.mirror_combo = QComboBox()
+        self.mirror_combo.addItems([
+            'https://bmclapi2.bangbang93.com/',
+            'https://download.mcbbs.net/',
+            '自定义'
+        ])
+        self.mirror_input = QLineEdit()
+        self.mirror_input.setPlaceholderText("输入自定义镜像源 URL")
+        self.mirror_input.setVisible(False) # Initially hidden
 
-        # 下载按钮
+        mirror_layout.addWidget(self.mirror_label)
+        mirror_layout.addWidget(self.mirror_combo)
+        mirror_layout.addWidget(self.mirror_input)
+        mirror_layout.addStretch()
+
+        # Connect signal for mirror combo
+        self.mirror_combo.currentTextChanged.connect(self.on_mirror_combo_changed)
+
+        # Download buttons
+        add_version_button = QPushButton("添加版本下载")
+        add_assets_button = QPushButton("添加资源下载")
+
+        # Add download/pause buttons and progress bar back
         self.download_button = QPushButton("开始下载队列")
         self.download_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        # 暂停/继续按钮
         self.pause_button = QPushButton("暂停下载")
         self.pause_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        # 进度条
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(True)
-        # 状态标签
-        self.status_label = QLabel("")
-        # 模组管理
+
+        # Download queue
+        self.status_label = QLabel("等待任务...")
+        download_layout.addLayout(download_version_layout)
+        download_layout.addLayout(mirror_layout) # Add mirror selection layout
+        download_layout.addWidget(add_version_button)
+        download_layout.addWidget(add_assets_button)
+        download_layout.addWidget(self.status_label)
+        # Add download/pause buttons and progress bar to the layout
+        download_layout.addWidget(self.download_button)
+        download_layout.addWidget(self.pause_button)
+        download_layout.addWidget(self.progress_bar)
+
+        # Add mod management UI elements before initializing ModManagerUI
         mod_group = QGroupBox("模组管理")
         mod_layout = QVBoxLayout()
         self.mod_list = QComboBox()
@@ -300,22 +318,18 @@ class PMCL(QMainWindow):
         mod_layout.addLayout(search_layout)
         mod_group.setLayout(mod_layout)
 
-        download_layout.addWidget(download_version_group)
-        download_layout.addWidget(queue_group)
-        download_layout.addWidget(self.download_button)
-        download_layout.addWidget(self.pause_button)
-        download_layout.addWidget(self.progress_bar)
-        download_layout.addWidget(self.status_label)
+        # Add mod group to download tab layout
         download_layout.addWidget(mod_group)
-        download_layout.addStretch()
+
+        # Set the layout for the download tab
         self.tab_download.setLayout(download_layout)
 
         # 设置Tab
         settings_layout = QVBoxLayout()
         dir_layout = QHBoxLayout()
-        self.dir_label = QLabel("游戏目录:")
+        self.dir_label = QLabel("版本隔离基础目录:")
         self.dir_input = QLineEdit()
-        self.dir_input.setText(self.config.get('game_dir', ''))
+        self.dir_input.setText(self.config.get('versions_base_dir', ''))
         self.dir_button = QPushButton("浏览")
         self.dir_button.clicked.connect(self.select_game_dir)
         self.dir_input.setMinimumWidth(250)
@@ -358,7 +372,7 @@ class PMCL(QMainWindow):
         # 初始化管理器
         self.auth_instance = MinecraftAuth()
         self.auth_manager = AuthManagerUI(self.auth_instance, self.login_label, self.login_button, self)
-        self.download_manager = DownloadManagerUI(self.status_label, self.progress_bar, self.download_button, self.pause_button, self.dir_input, self.download_version_combo, self.download_queue, self, self.download_mirror_label)
+        self.download_manager = DownloadManagerUI(self.status_label, self.progress_bar, self.download_button, self.pause_button, self.dir_input, self.download_version_combo, self.download_queue, self, self.download_mirror_label, self.config_manager)
         self.mod_manager = ModManagerUI(self.mod_list, self.search_mod_input, self.add_mod_button, self.delete_mod_button, self.search_mod_button, self)
 
         # 连接信号
@@ -375,17 +389,38 @@ class PMCL(QMainWindow):
 
         # 查找Java可执行文件并填充到下拉框
         self.populate_java_combo()
+
+        # Load mirror source from config and set the combo box
+        initial_config = self.config_manager.load_config()
+        saved_mirror = initial_config.get('mirror_source', 'https://bmclapi2.bangbang93.com/')
+        index = self.mirror_combo.findText(saved_mirror)
+        if index != -1:
+            self.mirror_combo.setCurrentIndex(index)
+        else:
+            self.mirror_combo.setCurrentText('自定义')
+            self.mirror_input.setText(saved_mirror)
+            self.mirror_input.setVisible(True)
     
     def refresh_local_versions(self):
         """刷新本地已下载的游戏版本列表"""
-        versions_dir = os.path.join(self.config.get('game_dir', ''), 'versions')
+        # Get the versions base directory from config
+        versions_base_dir = self.config.get('versions_base_dir')
+        if not versions_base_dir:
+             # Fallback to default if not set in config
+             project_root = os.path.abspath(os.path.dirname(__file__))
+             versions_base_dir = os.path.join(os.path.dirname(project_root), 'versions_isolated')
+
         local_versions = []
-        if os.path.exists(versions_dir):
-            for item in os.listdir(versions_dir):
-                version_path = os.path.join(versions_dir, item)
-                # 检查是否是版本目录且包含同名jar文件
-                if os.path.isdir(version_path) and os.path.exists(os.path.join(version_path, f'{item}.jar')):
-                    local_versions.append(item)
+        if os.path.exists(versions_base_dir):
+            for item in os.listdir(versions_base_dir):
+                # Check if the item is a directory and contains a versions folder
+                version_specific_dir = os.path.join(versions_base_dir, item)
+                versions_dir = os.path.join(version_specific_dir, 'versions')
+                if os.path.isdir(version_specific_dir) and os.path.exists(versions_dir):
+                    # Check if there's a version jar file inside the version-specific versions directory
+                    version_jar_path = os.path.join(versions_dir, item, f'{item}.jar')
+                    if os.path.exists(version_jar_path):
+                         local_versions.append(item)
         self.launch_version_combo.clear()
         if local_versions:
             self.launch_version_combo.addItems(local_versions)
@@ -395,23 +430,29 @@ class PMCL(QMainWindow):
 
     def add_to_queue(self, task):
         # 将任务添加到下载队列的操作委托给DownloadManagerUI
+        # Before adding to queue, ensure the correct version game directory is used by the downloader
+        selected_version = self.download_version_combo.currentText()
+        version_game_dir = self.get_version_game_dir(selected_version)
+        self.download_manager.downloader = MinecraftDownloader(version_game_dir, self.download_manager.config_manager.load_config().get('mirror_source'))
+        # Note: This might re-initialize the downloader unnecessarily. Consider passing game_dir to add_to_queue or downloader methods.
+        # For now, let's keep this simple and re-initialize.
+
         self.download_manager.add_to_queue(task)
     
     def select_game_dir(self):
-        project_root = os.path.abspath(os.path.dirname(__file__))
-        default_minecraft_dir = os.path.join(project_root, '.minecraft')
-        dir_path = QFileDialog.getExistingDirectory(self, "选择Minecraft游戏目录", default_minecraft_dir)
-        if dir_path:
-            # 只允许选择主目录下的.minecraft
-            if os.path.abspath(dir_path) != os.path.abspath(default_minecraft_dir):
-                QMessageBox.warning(self, "错误", f"请选择本项目主目录下的 .minecraft 文件夹！\n当前选择: {dir_path}")
-                return
-            self.dir_input.setText(dir_path)
-            self.config['game_dir'] = dir_path
-            self.config_manager.save_config(self.config)
-            # 更新本地版本列表
+        """选择版本隔离的基础目录"""
+        dialog = QFileDialog(self)
+        dialog.setFileMode(QFileDialog.DirectoryOnly)
+        if dialog.exec_():
+            selected_dir = dialog.selectedFiles()[0]
+            self.dir_input.setText(selected_dir)
+            # Save selected directory to config
+            config = self.config_manager.load_config() # Get current config
+            config['versions_base_dir'] = selected_dir # Save the base directory
+            self.config_manager.save_config(config)
+            # Refresh the local versions list after changing the base directory
             self.refresh_local_versions()
-            
+
     def on_memory_combo_changed(self, text):
         if text == "自定义":
             self.memory_input.setVisible(True)
@@ -454,94 +495,91 @@ class PMCL(QMainWindow):
                 self.java_combo.blockSignals(False)
 
     def save_selected_java_path(self):
-        """将当前选定的Java路径保存到注册表"""
-        print("save_selected_java_path called.")
-        if sys.platform == "win32":
-            selected_name = self.java_combo.currentText()
-            selected_path = self.java_paths_map.get(selected_name, "")
-            print(f"Selected Java name: {selected_name}, path: {selected_path}")
-            try:
-                # 创建或打开注册表键
-                reg_key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, "Software\\PMCL")
-                # 设置值
-                winreg.SetValueEx(reg_key, "SelectedJavaPath", 0, winreg.REG_SZ, selected_path)
-                winreg.CloseKey(reg_key)
-                print(f"Successfully saved selected Java path to registry: {selected_path}")
-            except Exception as e:
-                print(f"保存Java路径到注册表时发生错误: {e}")
-        else:
-            print("Not on Windows, skipping registry save.")
-    
+        """将当前选定的Java路径保存到配置"""
+        selected_name = self.java_combo.currentText()
+        # Get the actual path from the map
+        selected_path = self.java_paths_map.get(selected_name, "")
+        # Save selected Java path to config
+        config = self.config_manager.load_config()
+        config['java_path'] = selected_path
+        self.config_manager.save_config(config)
+
     def load_saved_java_path(self):
-        """从注册表加载保存的Java路径并选择"""
-        print("load_saved_java_path called.")
-        if sys.platform == "win32":
-            try:
-                # 打开注册表键
-                reg_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Software\\PMCL", 0, winreg.KEY_READ)
-                # 读取值
-                saved_path, reg_type = winreg.QueryValueEx(reg_key, "SelectedJavaPath")
-                winreg.CloseKey(reg_key)
-                print(f"Read saved Java path from registry: {saved_path}")
+        """从配置加载保存的Java路径并选择"""
+        # Load saved Java path from config
+        config = self.config_manager.load_config()
+        saved_java_path = config.get('java_path')
+        if saved_java_path:
+            # Find the index of the saved path in the java_paths_map values
+            saved_index = -1
+            for i in range(self.java_combo.count()):
+                item_text = self.java_combo.itemText(i)
+                item_path = self.java_paths_map.get(item_text)
+                if item_path and os.path.normpath(item_path).lower() == os.path.normpath(saved_java_path).lower():
+                    saved_index = i
+                    break
 
-                # 在下拉框中查找并选择保存的路径
-                if saved_path:
-                    # 规范化路径并转为小写进行比较，忽略大小写和斜杠方向
-                    normalized_saved_path = os.path.normpath(saved_path).lower()
-                    found_in_list = False
-                    for i in range(self.java_combo.count()):
-                        item_name = self.java_combo.itemText(i)
-                        item_path = self.java_paths_map.get(item_name, "")
-                        if item_path:
-                            normalized_item_path = os.path.normpath(item_path).lower()
-                            if normalized_item_path == normalized_saved_path:
-                                self.java_combo.setCurrentIndex(i)
-                                print(f"Found and selected saved Java path: {item_path}")
-                                found_in_list = True
-                                break
-
-                    if not found_in_list:
-                        # 如果保存的路径不在当前列表中，添加它
-                        if os.path.exists(saved_path):
-                             # 尝试获取一个友好的名字，或者直接使用路径
-                             # For simplicity, let's use the path for now
-                             item_name = f"Saved: {saved_path}"
-                             if item_name not in self.java_paths_map:
-                                 self.java_combo.addItem(item_name)
-                                 self.java_paths_map[item_name] = saved_path
-                                 # 找到新添加的项并选中它
-                                 index = self.java_combo.findText(item_name)
-                                 if index != -1:
-                                     self.java_combo.setCurrentIndex(index)
-                                     print(f"Added and selected saved Java path: {saved_path}")
-
-                        else:
-                             print(f"Saved Java path from registry does not exist: {saved_path}")
-
-                    # else:
-                    #    print(f"Saved Java path not found in current list: {saved_path}") # 这条打印不再需要
-                else:
-                    print("No saved Java path found in registry.")
-            except FileNotFoundError:
-                print("Registry key Software\\PMCL not found (first run?).")
-            except Exception as e:
-                print(f"从注册表加载Java路径时发生错误: {e}")
-        else:
-            print("Not on Windows, skipping registry load.")
+            if saved_index != -1:
+                self.java_combo.setCurrentIndex(saved_index)
+            elif os.path.exists(saved_java_path): # If the saved path exists but wasn't in the initial list, add it
+                 item_name = f"Saved: {saved_java_path}"
+                 if item_name not in self.java_paths_map:
+                      self.java_combo.addItem(item_name)
+                      self.java_paths_map[item_name] = saved_java_path
+                      index = self.java_combo.findText(item_name)
+                      if index != -1:
+                           self.java_combo.setCurrentIndex(index)
+        # Load saved memory setting from config
+        saved_memory = config.get('max_memory')
+        if saved_memory:
+            index = self.memory_combo.findText(saved_memory)
+            if index != -1:
+                self.memory_combo.setCurrentIndex(index)
+                if saved_memory == '自定义':
+                    custom_memory = config.get('custom_memory', '')
+                    self.memory_input.setText(custom_memory)
+                    self.memory_input.setVisible(True)
+            elif saved_memory:
+                 # Handle case where saved_memory is a custom value not in the combo
+                 self.memory_combo.setCurrentText('自定义')
+                 self.memory_input.setText(saved_memory)
+                 self.memory_input.setVisible(True)
 
     def launch_game(self):
-        launcher = GameLauncher()
-        # 使用 self.launch_version_combo 获取本地版本
-        version = self.launch_version_combo.currentText()
-        if version == "未找到本地版本":
-            QMessageBox.warning(self, "错误", "未找到本地版本，无法启动游戏！")
+        # 启动游戏逻辑将委托给GameLauncher
+        selected_version = self.launch_version_combo.currentText()
+        # Get the version-specific game directory
+        game_dir = self.get_version_game_dir(selected_version)
+        java_path = self.java_combo.currentText()
+        # Get memory setting
+        memory_setting = self.memory_combo.currentText()
+        if memory_setting == '自定义':
+            max_memory = self.memory_input.text()
+        else:
+            max_memory = memory_setting
+
+        if not selected_version:
+            QMessageBox.warning(self, "错误", "未选择有效的游戏版本！")
             return
-        # 获取选定的Java路径
-        selected_java_path = self.java_combo.currentText()
-        if selected_java_path == "未找到Java，请检查安装或环境变量":
-             QMessageBox.warning(self, "错误", "未选择有效的Java可执行文件！")
-             return
-        launcher.launch_game(self.current_profile, self.dir_input.text(), version, self.memory_combo, self.memory_input, self.java_paths_map[selected_java_path])
+        if java_path == "未找到Java，请检查安装或环境变量":
+            QMessageBox.warning(self, "错误", "未选择有效的Java可执行文件！")
+            return
+
+        # Before launching, save the selected Java path and memory to config
+        self.save_selected_java_path() # Use existing method to save java path
+        # Save memory setting to config
+        config = self.config_manager.load_config()
+        config['max_memory'] = memory_setting
+        if memory_setting == '自定义':
+            config['custom_memory'] = max_memory # Save custom value if applicable
+        else:
+            if 'custom_memory' in config:
+                del config['custom_memory'] # Remove custom value if not using custom
+        self.config_manager.save_config(config)
+
+        # Now, launch the game using GameLauncher
+        self.game_launcher = GameLauncher(game_dir)
+        self.game_launcher.launch_game(selected_version, java_path, self.current_profile, max_memory) # Pass max_memory
 
     def browse_and_search_java(self):
         """让用户选择目录并递归搜索Java可执行文件"""
@@ -557,6 +595,25 @@ class PMCL(QMainWindow):
                 QMessageBox.information(self, "搜索完成", f"在 {dir_path} 中找到 {len(found_installations)} 个Java可执行文件。")
             else:
                 QMessageBox.information(self, "搜索完成", f"在 {dir_path} 中未找到Java可执行文件。")
+
+    def on_mirror_combo_changed(self, text):
+        if text == '自定义':
+            self.mirror_input.setVisible(True)
+            # Load custom mirror from config if exists
+            config = self.config_manager.load_config()
+            saved_mirror = config.get('mirror_source', '')
+            if saved_mirror and saved_mirror not in ['https://bmclapi2.bangbang93.com/', 'https://download.mcbbs.net/']:
+                self.mirror_input.setText(saved_mirror)
+            else:
+                self.mirror_input.clear()
+        else:
+            self.mirror_input.setVisible(False)
+            # Save selected mirror to config
+            config = self.config_manager.load_config()
+            config['mirror_source'] = text
+            self.config_manager.save_config(config)
+            # Update the displayed current mirror label
+            self.download_mirror_label.setText(f"当前镜像: {text}")
 
 def main():
     app = QApplication(sys.argv)

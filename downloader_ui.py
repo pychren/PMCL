@@ -33,7 +33,7 @@ class DownloadThread(QThread):
         self.progress.emit(text, percent, speed)
 
 class DownloadManagerUI:
-    def __init__(self, status_label, progress_bar, download_button, pause_button, dir_input, download_version_combo, download_queue, main_window, mirror_label):
+    def __init__(self, status_label, progress_bar, download_button, pause_button, dir_input, download_version_combo, download_queue, main_window, mirror_label, config_manager):
         self.status_label = status_label
         self.progress_bar = progress_bar
         self.download_button = download_button
@@ -44,6 +44,7 @@ class DownloadManagerUI:
         self.main_window = main_window # 引用主窗口以便调用其方法和访问成员
         self.is_paused = False # 添加is_paused属性
         self.mirror_label = mirror_label # 添加镜像标签
+        self.config_manager = config_manager # Add config_manager attribute
 
         # 连接信号
         self.download_button.clicked.connect(self.download_game)
@@ -72,7 +73,11 @@ class DownloadManagerUI:
         self.status_label.setText("准备下载...")
         self.progress_bar.setValue(0)
 
-        self.downloader = MinecraftDownloader(game_dir)
+        # Get mirror source from config
+        config = self.config_manager.load_config()
+        mirror_source = config.get('mirror_source', 'https://bmclapi2.bangbang93.com/') # Use default if not in config
+
+        self.downloader = MinecraftDownloader(game_dir, mirror_source) # Pass mirror_source to downloader
         self.download_thread = DownloadThread(self.downloader, version, self.download_queue)
         self.download_thread.progress.connect(self.update_progress)
         self.download_thread.finished.connect(self.download_finished)
