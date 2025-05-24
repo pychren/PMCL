@@ -124,22 +124,25 @@ class PMCL(QMainWindow):
         # 查找或创建.minecraft目录
         self.find_or_create_minecraft_dir()
         
-        # 创建界面元素 (先创建UI元素，再初始化管理器，并将UI元素传递给管理器)
+        # 创建界面元素 (先创建UI元素)
         self.create_ui()
         
-        # 初始化认证和登录UI管理器
-        self.auth_instance = MinecraftAuth()
-        self.auth_manager = AuthManagerUI(self.auth_instance, self.login_label, self.login_button, self)
+        # 管理器初始化和信号连接将在 create_ui 方法中完成
+        # # 初始化认证和登录UI管理器
+        # self.auth_instance = MinecraftAuth()
+        # self.auth_manager = AuthManagerUI(self.auth_instance, self.login_label, self.login_button, self)
         
-        # 初始化下载UI管理器
-        self.download_manager = DownloadManagerUI(self.status_label, self.progress_bar, self.download_button, self.pause_button, self.dir_input, self.download_version_combo, self.download_queue, self, self.download_mirror_label)
+        # # 初始化下载UI管理器
+        # self.download_manager = DownloadManagerUI(self.status_label, self.progress_bar, self.download_button, self.pause_button, self.dir_input, self.download_version_combo, self.download_queue, self, self.download_mirror_label)
         
-        # 初始化模组管理UI管理器
-        # 将此初始化移到 create_ui 之后，因为它需要访问 create_ui 中创建的 UI 元素
+        # # 初始化模组管理UI管理器
         # self.mod_manager = ModManagerUI(self.mod_list, self.search_mod_input, self.add_mod_button, self.delete_mod_button, self.search_mod_button, self)
         
         # 尝试自动登录（通过 AuthManagerUI 处理）
-        self.auth_manager.check_initial_login()
+        # self.auth_manager.check_initial_login() # 自动登录也移到 create_ui 中，在管理器初始化后调用
+        
+        # 刷新本地已下载版本列表
+        # self.refresh_local_versions() # 刷新本地版本列表也移到 create_ui 中，在管理器初始化后调用
     
     def find_or_create_minecraft_dir(self):
         """只查找或创建.minecraft目录，不再创建PMCL文件夹"""
@@ -173,7 +176,7 @@ class PMCL(QMainWindow):
         launch_version_layout = QHBoxLayout()
         self.launch_version_label = QLabel("已下载版本:")
         self.launch_version_combo = QComboBox()
-        # 填充本地已下载版本列表将在 PMCL.__init__ 中完成
+        # 填充本地已下载版本列表将在 create_ui 末尾完成
         launch_version_layout.addWidget(self.launch_version_label)
         launch_version_layout.addWidget(self.launch_version_combo)
         launch_version_layout.addStretch()
@@ -198,7 +201,6 @@ class PMCL(QMainWindow):
         memory_group.setLayout(memory_layout)
         # 启动按钮
         self.launch_button = QPushButton("启动游戏")
-        # 启动按钮的信号连接将在 __init__ 中使用 self.launch_version_combo
         self.launch_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         launch_layout.addWidget(launch_version_group)
@@ -212,7 +214,6 @@ class PMCL(QMainWindow):
         login_hlayout = QHBoxLayout()
         self.login_label = QLabel("未登录")
         self.login_button = QPushButton("登录/切换账号")
-        # login_button 的信号连接已移至 AuthManagerUI 的 __init__ 方法
         self.login_label.setMinimumWidth(120)
         login_hlayout.addWidget(self.login_label)
         login_hlayout.addWidget(self.login_button)
@@ -259,11 +260,9 @@ class PMCL(QMainWindow):
 
         # 下载按钮
         self.download_button = QPushButton("开始下载队列")
-        # download_button 的信号连接已移至 DownloadManagerUI 的 __init__ 方法
         self.download_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         # 暂停/继续按钮
         self.pause_button = QPushButton("暂停下载")
-        # pause_button 的信号连接已移至 DownloadManagerUI 的 __init__ 方法
         self.pause_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         # 进度条
         self.progress_bar = QProgressBar()
@@ -279,17 +278,15 @@ class PMCL(QMainWindow):
         btn_layout = QHBoxLayout()
         self.add_mod_button = QPushButton("添加本地模组")
         self.delete_mod_button = QPushButton("删除选中模组")
-        # 模组按钮的信号连接已移至 ModManagerUI 的 __init__ 方法
         btn_layout.addWidget(self.add_mod_button)
         btn_layout.addSpacing(10)
         btn_layout.addWidget(self.delete_mod_button)
         # 搜索横向布局
         search_layout = QHBoxLayout()
         self.search_mod_input = QLineEdit()
-        self.search_mod_input.setPlaceholderText("输入模组名（如 sodium）")
+        self.search_mod_input.setPlaceholderText("输入模组名（如 sodium")
         self.search_mod_input.setMinimumWidth(220)
         self.search_mod_button = QPushButton("在线搜索并下载")
-        # 模组搜索按钮的信号连接已移至 ModManagerUI 的 __init__ 方法
         search_layout.addWidget(self.search_mod_input)
         search_layout.addSpacing(10)
         search_layout.addWidget(self.search_mod_button)
@@ -332,6 +329,12 @@ class PMCL(QMainWindow):
         self.auth_manager = AuthManagerUI(self.auth_instance, self.login_label, self.login_button, self)
         self.download_manager = DownloadManagerUI(self.status_label, self.progress_bar, self.download_button, self.pause_button, self.dir_input, self.download_version_combo, self.download_queue, self, self.download_mirror_label)
         self.mod_manager = ModManagerUI(self.mod_list, self.search_mod_input, self.add_mod_button, self.delete_mod_button, self.search_mod_button, self)
+
+        # 连接信号
+        self.launch_button.clicked.connect(self.launch_game)
+        # download_button 和 pause_button 的信号连接已移至 DownloadManagerUI 的 __init__ 方法
+        # 模组按钮的信号连接已移至 ModManagerUI 的 __init__ 方法
+        # login_button 的信号连接已移至 AuthManagerUI 的 __init__ 方法
 
         # 尝试自动登录（通过 AuthManagerUI 处理）
         self.auth_manager.check_initial_login()

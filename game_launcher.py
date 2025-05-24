@@ -52,6 +52,8 @@ class GameLauncher:
                 "--accessToken", current_profile["access_token"]
             ])
         
+        print("Attempting to launch game with args:", game_args)
+
         try:
             subprocess.Popen(game_args)
             QMessageBox.information(None, "提示", f"已启动Minecraft {version}")
