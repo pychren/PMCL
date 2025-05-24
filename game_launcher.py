@@ -6,7 +6,7 @@ class GameLauncher:
     def __init__(self):
         pass
 
-    def launch_game(self, current_profile, game_dir, version, memory_combo, memory_input):
+    def launch_game(self, current_profile, game_dir, version, memory_combo, memory_input, java_path):
         if not current_profile:
             QMessageBox.warning(None, "错误", "请先登录！")
             return
@@ -28,7 +28,6 @@ class GameLauncher:
                 QMessageBox.warning(None, "错误", "请输入自定义内存大小，如 6G 或 4096M")
                 return
         
-        java_path = "java"  # 假设Java在系统PATH中
         game_args = [
             java_path,
             f"-Xmx{memory}",  # 最大内存
