@@ -1,4 +1,4 @@
-# PMCL (Python Minecraft Launcher)
+# PMCL (Pychren Minecraft Launcher)
 
 这是一个使用 Python 和 PyQt5 构建的 Minecraft 启动器。
 
