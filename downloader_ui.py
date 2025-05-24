@@ -5,6 +5,7 @@ from downloader import MinecraftDownloader # 需要MinecraftDownloader类
 class DownloadThread(QThread):
     progress = pyqtSignal(str, float, float)  # 状态文本, 百分比, 速度
     finished = pyqtSignal(bool, str)
+    finished_successfully = pyqtSignal() # 添加下载成功信号
     
     def __init__(self, downloader, version, queue):
         super().__init__()
@@ -23,6 +24,7 @@ class DownloadThread(QThread):
                     self.progress.emit("正在下载资源文件...", 0, 0)
                     self.downloader.download_assets(self.version, self.progress_callback)
             self.finished.emit(True, "下载完成！")
+            self.finished_successfully.emit() # 下载成功时发射信号
         except Exception as e:
             self.finished.emit(False, f"下载失败：{str(e)}")
     
@@ -31,16 +33,17 @@ class DownloadThread(QThread):
         self.progress.emit(text, percent, speed)
 
 class DownloadManagerUI:
-    def __init__(self, status_label, progress_bar, download_button, pause_button, dir_input, version_combo, download_queue, main_window):
+    def __init__(self, status_label, progress_bar, download_button, pause_button, dir_input, download_version_combo, download_queue, main_window, mirror_label):
         self.status_label = status_label
         self.progress_bar = progress_bar
         self.download_button = download_button
         self.pause_button = pause_button
         self.dir_input = dir_input
-        self.version_combo = version_combo
+        self.download_version_combo = download_version_combo # 使用新的版本选择框
         self.download_queue = download_queue
         self.main_window = main_window # 引用主窗口以便调用其方法和访问成员
         self.is_paused = False # 添加is_paused属性
+        self.mirror_label = mirror_label # 添加镜像标签
 
         # 连接信号
         self.download_button.clicked.connect(self.download_game)
@@ -55,7 +58,7 @@ class DownloadManagerUI:
 
     def download_game(self):
         game_dir = self.dir_input.text()
-        version = self.version_combo.currentText()
+        version = self.download_version_combo.currentText() # 使用新的版本选择框获取版本
 
         if not game_dir:
             QMessageBox.warning(self.main_window, "错误", "请选择游戏目录！")
@@ -73,6 +76,8 @@ class DownloadManagerUI:
         self.download_thread = DownloadThread(self.downloader, version, self.download_queue)
         self.download_thread.progress.connect(self.update_progress)
         self.download_thread.finished.connect(self.download_finished)
+        # 连接下载成功信号到主窗口的刷新本地版本列表方法
+        self.download_thread.finished_successfully.connect(self.main_window.refresh_local_versions)
         self.download_thread.start()
 
     def update_progress(self, message, percent, speed):

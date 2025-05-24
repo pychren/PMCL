@@ -132,7 +132,7 @@ class PMCL(QMainWindow):
         self.auth_manager = AuthManagerUI(self.auth_instance, self.login_label, self.login_button, self)
         
         # 初始化下载UI管理器
-        self.download_manager = DownloadManagerUI(self.status_label, self.progress_bar, self.download_button, self.pause_button, self.dir_input, self.version_combo, self.download_queue, self)
+        self.download_manager = DownloadManagerUI(self.status_label, self.progress_bar, self.download_button, self.pause_button, self.dir_input, self.download_version_combo, self.download_queue, self, self.download_mirror_label)
         
         # 初始化模组管理UI管理器
         # 将此初始化移到 create_ui 之后，因为它需要访问 create_ui 中创建的 UI 元素
@@ -169,25 +169,17 @@ class PMCL(QMainWindow):
 
         # 启动Tab
         launch_layout = QVBoxLayout()
-        # 版本选择
-        version_layout = QHBoxLayout()
-        self.version_label = QLabel("游戏版本:")
-        self.version_combo = QComboBox()
-        all_versions = get_all_minecraft_versions()
-        self.version_combo.addItems(all_versions)
-        # 显示当前镜像
-        from downloader import MinecraftDownloader
-        project_root = os.path.abspath(os.path.dirname(__file__))
-        minecraft_dir = os.path.join(project_root, '.minecraft')
-        temp_downloader = MinecraftDownloader(minecraft_dir)
-        mirror = temp_downloader.get_fastest_mirror()
-        self.mirror_label = QLabel(f"当前镜像: {mirror['name']}")
-        version_layout.addWidget(self.version_label)
-        version_layout.addWidget(self.version_combo)
-        version_layout.addWidget(self.mirror_label)
-        version_layout.addStretch()
-        version_group = QGroupBox("游戏版本")
-        version_group.setLayout(version_layout)
+        # 本地游戏版本选择
+        launch_version_layout = QHBoxLayout()
+        self.launch_version_label = QLabel("已下载版本:")
+        self.launch_version_combo = QComboBox()
+        # 填充本地已下载版本列表将在 PMCL.__init__ 中完成
+        launch_version_layout.addWidget(self.launch_version_label)
+        launch_version_layout.addWidget(self.launch_version_combo)
+        launch_version_layout.addStretch()
+        launch_version_group = QGroupBox("选择版本 (本地)")
+        launch_version_group.setLayout(launch_version_layout)
+
         # 内存管理
         memory_layout = QHBoxLayout()
         self.memory_label = QLabel("最大内存:")
@@ -206,9 +198,10 @@ class PMCL(QMainWindow):
         memory_group.setLayout(memory_layout)
         # 启动按钮
         self.launch_button = QPushButton("启动游戏")
-        self.launch_button.clicked.connect(self.launch_game)
+        # 启动按钮的信号连接将在 __init__ 中使用 self.launch_version_combo
         self.launch_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        launch_layout.addWidget(version_group)
+
+        launch_layout.addWidget(launch_version_group)
         launch_layout.addWidget(memory_group)
         launch_layout.addWidget(self.launch_button)
         launch_layout.addStretch()
@@ -232,6 +225,26 @@ class PMCL(QMainWindow):
 
         # 下载Tab
         download_layout = QVBoxLayout()
+        # 在线游戏版本选择
+        download_version_layout = QHBoxLayout()
+        self.download_version_label = QLabel("在线版本:")
+        self.download_version_combo = QComboBox()
+        all_versions = get_all_minecraft_versions()
+        self.download_version_combo.addItems(all_versions)
+        # 显示当前镜像
+        from downloader import MinecraftDownloader
+        project_root = os.path.abspath(os.path.dirname(__file__))
+        minecraft_dir = os.path.join(project_root, '.minecraft')
+        temp_downloader = MinecraftDownloader(minecraft_dir)
+        mirror = temp_downloader.get_fastest_mirror()
+        self.download_mirror_label = QLabel(f"当前镜像: {mirror['name']}")
+        download_version_layout.addWidget(self.download_version_label)
+        download_version_layout.addWidget(self.download_version_combo)
+        download_version_layout.addWidget(self.download_mirror_label)
+        download_version_layout.addStretch()
+        download_version_group = QGroupBox("选择版本 (在线)")
+        download_version_group.setLayout(download_version_layout)
+
         # 下载队列管理
         queue_layout = QHBoxLayout()
         self.version_check = QPushButton("添加主程序到队列")
@@ -243,6 +256,7 @@ class PMCL(QMainWindow):
         queue_layout.addStretch()
         queue_group = QGroupBox("下载管理")
         queue_group.setLayout(queue_layout)
+
         # 下载按钮
         self.download_button = QPushButton("开始下载队列")
         # download_button 的信号连接已移至 DownloadManagerUI 的 __init__ 方法
@@ -251,8 +265,6 @@ class PMCL(QMainWindow):
         self.pause_button = QPushButton("暂停下载")
         # pause_button 的信号连接已移至 DownloadManagerUI 的 __init__ 方法
         self.pause_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        # is_paused 属性已移至 DownloadManagerUI
-        # self.is_paused = False
         # 进度条
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(True)
@@ -285,6 +297,8 @@ class PMCL(QMainWindow):
         mod_layout.addLayout(btn_layout)
         mod_layout.addLayout(search_layout)
         mod_group.setLayout(mod_layout)
+
+        download_layout.addWidget(download_version_group)
         download_layout.addWidget(queue_group)
         download_layout.addWidget(self.download_button)
         download_layout.addWidget(self.pause_button)
@@ -313,10 +327,35 @@ class PMCL(QMainWindow):
         settings_layout.addStretch()
         self.tab_settings.setLayout(settings_layout)
 
-        # 现在初始化 ModManagerUI 并调用 refresh_mod_list
+        # 初始化管理器
+        self.auth_instance = MinecraftAuth()
+        self.auth_manager = AuthManagerUI(self.auth_instance, self.login_label, self.login_button, self)
+        self.download_manager = DownloadManagerUI(self.status_label, self.progress_bar, self.download_button, self.pause_button, self.dir_input, self.download_version_combo, self.download_queue, self, self.download_mirror_label)
         self.mod_manager = ModManagerUI(self.mod_list, self.search_mod_input, self.add_mod_button, self.delete_mod_button, self.search_mod_button, self)
-        self.mod_manager.refresh_mod_list()
+
+        # 尝试自动登录（通过 AuthManagerUI 处理）
+        self.auth_manager.check_initial_login()
+
+        # 刷新本地已下载版本列表
+        self.refresh_local_versions()
     
+    def refresh_local_versions(self):
+        """刷新本地已下载的游戏版本列表"""
+        versions_dir = os.path.join(self.config.get('game_dir', ''), 'versions')
+        local_versions = []
+        if os.path.exists(versions_dir):
+            for item in os.listdir(versions_dir):
+                version_path = os.path.join(versions_dir, item)
+                # 检查是否是版本目录且包含同名jar文件
+                if os.path.isdir(version_path) and os.path.exists(os.path.join(version_path, f'{item}.jar')):
+                    local_versions.append(item)
+        self.launch_version_combo.clear()
+        if local_versions:
+            self.launch_version_combo.addItems(local_versions)
+        else:
+            self.launch_version_combo.addItem("未找到本地版本")
+            self.launch_button.setEnabled(False) # 如果没有本地版本，禁用启动按钮
+
     def add_to_queue(self, task):
         # 将任务添加到下载队列的操作委托给DownloadManagerUI
         self.download_manager.add_to_queue(task)
@@ -333,6 +372,8 @@ class PMCL(QMainWindow):
             self.dir_input.setText(dir_path)
             self.config['game_dir'] = dir_path
             self.config_manager.save_config(self.config)
+            # 更新本地版本列表
+            self.refresh_local_versions()
             
     def on_memory_combo_changed(self, text):
         if text == "自定义":
@@ -342,7 +383,12 @@ class PMCL(QMainWindow):
     
     def launch_game(self):
         launcher = GameLauncher()
-        launcher.launch_game(self.current_profile, self.dir_input.text(), self.version_combo.currentText(), self.memory_combo, self.memory_input)
+        # 使用 self.launch_version_combo 获取本地版本
+        version = self.launch_version_combo.currentText()
+        if version == "未找到本地版本":
+            QMessageBox.warning(self, "错误", "未找到本地版本，无法启动游戏！")
+            return
+        launcher.launch_game(self.current_profile, self.dir_input.text(), version, self.memory_combo, self.memory_input)
 
 def main():
     app = QApplication(sys.argv)
